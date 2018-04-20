@@ -2,19 +2,25 @@ import discord
 import time
 import asyncio
 import sys
+import threading
 
 from tinydb import TinyDB, Query
 
 client = discord.Client()
 db = TinyDB('db.json')
 
+last_time = time.time()
+
 @client.event
 async def on_ready():
-    print('TEST')
-    print(client.user.name)
+    print('READY')
 
 @client.event
 async def on_message(message):
+    global last_time
+    if time.time() - last_time > 10:
+        await nickname_check()
+        last_time = time.time()
     author = message.author
     format_flag = True
 
@@ -37,6 +43,7 @@ async def on_message(message):
                     elif command_list[0] == 'h':
                         timestamp -= 3600 * int(command_list[2])
                     db.insert({'user': author.id, 'start': str(timestamp), 'type': command_list[0], 'goal': command_list[1]})
+                    await set_nickname(timestamp, author, command_list[0], command_list[1])
                 else:
                     await client.send_message(message.channel, 'FORMAT: `h!start d/h goal completed`.\nd is for days and h is for hours\nEXAMPLE: `h!start d 3 1`')
             else:
@@ -44,8 +51,30 @@ async def on_message(message):
         if command_text == 'stop':
             if db.search(Query().user == author.id) != []:
                 db.remove(Query().user == author.id)
+                await client.change_nickname(author, None)
             else:
                 await client.send_message(message.channel, 'Not started. Please type h!start first.')
+
+async def set_nickname(timestamp, author, type, goal):
+    name = author.name
+    current_time = time.time()
+    diff = 0
+    append = ''
+    if type == 'h':
+        diff = (current_time - timestamp) // 3600
+        append = ' Hours'
+    elif type == 'd':
+        diff = (current_time - timestamp) // 86400
+        append = ' Days'
+
+    nickname = name + ' ' + str(int(diff)) + '/' + str(goal) + append
+    await client.change_nickname(author, nickname)
+
+async def nickname_check():
+    print(time.ctime())
+    for entry in db.all():
+        user = await client.get_user_info(entry['user'])
+        print(user.name)
 
 if __name__ == '__main__':
     if '--run' in sys.argv:
@@ -53,3 +82,4 @@ if __name__ == '__main__':
         with open('token.key') as file:
             token = file.read()
         client.run(token)
+        
